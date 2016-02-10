@@ -1,0 +1,28 @@
+#######################################
+# Syntax Coloring Map For TN901
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+TN901	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+init	KEYWORD2
+read	KEYWORD2
+getEnvironmentTemperature() KEYWORD2
+getObjectTemperature() KEYWORD2
+
+#######################################
+# Constants (LITERAL1)
+#######################################
+
+TN901_ETADDRESS LITERAL1
+TN901_OTADDRESS LITERAL1
+TN901_ENDADDRESS LITERAL1
+MODE_ET	LITERAL1
+MODE_OT	LITERAL1
