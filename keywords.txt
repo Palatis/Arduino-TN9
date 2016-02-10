@@ -7,6 +7,7 @@
 #######################################
 
 TN901	KEYWORD1
+tn901_interrupt KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
@@ -14,8 +15,13 @@ TN901	KEYWORD1
 
 init	KEYWORD2
 read	KEYWORD2
-getEnvironmentTemperature() KEYWORD2
-getObjectTemperature() KEYWORD2
+getEnvironmentTemperature KEYWORD2
+getObjectTemperature KEYWORD2
+startConversion KEYWORD2
+endConversion KEYWORD2
+processIsr KEYWORD2
+attachEnvironmentInterrupt KEYWORD2
+attachObjectInterrupt KEYWORD2
 
 #######################################
 # Constants (LITERAL1)
