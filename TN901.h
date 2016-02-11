@@ -29,6 +29,7 @@ private:
 	mutable uint8_t _data[5];
 	
 	uint8_t _idx;
+	time_t _conversionStartMillis;
 	tn901_interrupt _interruptEnvironment;
 	tn901_interrupt _interruptObject;
 
@@ -199,20 +200,30 @@ public:
 	
 	void processIsr()
 	{
-		if (_idx == 0)
+		time_t timeoutMillis = millis() - _conversionStartMillis;
+		if (_idx == 0 || timeoutMillis > 25) // max frame length is 20ms according to datasheet
+		{
+			#ifdef TN901_DEBUG
+			if (timeoutMillis > 25 && _idx != 0)
+				Serial.println("TN901: timed out");
+			#endif
+
+			_idx = 0; // required when timed out
+			_conversionStartMillis = millis();
 			_data[0] = _data[1] = _data[2] = _data[3] = _data[4] = 0x00;
+		}
 
 		uint8_t nByte = _idx / 8;
-		
+
 		_data[nByte] <<= 1;
 		_data[nByte] |= (digitalRead(_dataPin) == HIGH) ? 0x01 : 0x00;
-		
+
 		++_idx;
 		if (_idx >= 40) // read 40 bits...
 		{
 			uint8_t flag = updateTemperature();
 			_idx = 0;
-			
+
 			if (flag == MODE_ET) {
 				if (_interruptEnvironment != NULL)
 					_interruptEnvironment();
