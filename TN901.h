@@ -29,7 +29,7 @@ private:
 	mutable uint8_t _data[5];
 	
 	uint8_t _idx;
-    tn901_interrupt _interruptEnvironment;
+	tn901_interrupt _interruptEnvironment;
 	tn901_interrupt _interruptObject;
 
 	void init()
@@ -38,6 +38,58 @@ private:
 		pinMode(_clkPin, INPUT);
 		pinMode(_ackPin, OUTPUT);
 		digitalWrite(_ackPin, HIGH);
+	}
+	
+	uint8_t updateTemperature() const
+	{
+		uint8_t crc = _data[0] + _data[1] + _data[2];
+
+		#ifdef TN901_DEBUG
+		Serial.print("TN901: data: ");
+		Serial.print(_data[0], HEX);
+		Serial.print(":");
+		Serial.print(_data[1], HEX);
+		Serial.print(":");
+		Serial.print(_data[2], HEX);
+		Serial.print(":");
+		Serial.print(_data[3], HEX);
+		Serial.print(":");
+		Serial.print(_data[4], HEX);
+
+		Serial.print(", crc = ");
+		Serial.print(crc, HEX);
+		if (crc == _data[3]) {
+			Serial.println(" (GOOD)");
+		} else {
+			Serial.print(" (BAD (assume ");
+			Serial.print(crc, HEX);
+			Serial.println("))");
+		}
+		#endif
+
+		if (_data[4] == TN901_ENDADDRESS && ((_data[0] + _data[1] + _data[2]) & 0xff) == _data[3])
+		{
+			if (_data[0] == TN901_OTADDRESS)
+			{
+				_tempObject = ((_data[1] * 256.0 + _data[2]) / 16.0) - 273.15;
+				#ifdef TN901_DEBUG
+				Serial.print("TN901: Got object temp = ");
+				Serial.println(_tempObject);
+				#endif
+				return MODE_OT;
+			}
+			else if (_data[0] == TN901_ETADDRESS)
+			{
+				_tempEnvironment = ((_data[1] * 256.0 + _data[2]) / 16.0) - 273.15;
+				#ifdef TN901_DEBUG
+				Serial.print("TN901: Got environment temp = ");
+				Serial.println(_tempObject);
+				#endif
+				return MODE_ET;
+			}
+		}
+
+		return 0x00;
 	}
 
 public:
@@ -60,6 +112,7 @@ public:
 
 	void read(uint8_t mode = MODE_ET | MODE_OT) const
 	{
+		mode &= MODE_ET | MODE_OT;
 		uint8_t flag = 0x00;
 
 		digitalWrite(_ackPin, LOW); // start conversion
@@ -67,10 +120,6 @@ public:
 		uint8_t k;
 		for(k = 0; k < 10; ++k) // try 10 frames
 		{
-			#ifdef TN901_DEBUG
-			Serial.print("TN901: data: ");
-			#endif
-
 			for(uint8_t j = 0; j < 5; ++j) // 5 byte per frame
 			{
 				for(uint8_t i = 0; i < 8; ++i) // 8 bits per byte
@@ -87,43 +136,9 @@ public:
 					}
 					_data[j]= (_data[j] << 1) | ((digitalRead(_dataPin) == HIGH) ? 0x01 : 0x00);
 				}
-				#ifdef TN901_DEBUG
-				Serial.print(_data[j], HEX);
-				Serial.print(" : ");
-				#endif
 			}
 
-			#ifdef TN901_DEBUG
-			Serial.print(", crc = ");
-			Serial.print((_data[0] + _data[1] + _data[2]) & 0xff, HEX);
-			Serial.print(" (");
-			Serial.print(_data[3], HEX);
-			if (((_data[0] + _data[1] + _data[2]) & 0xff) == _data[3])
-				Serial.println(") Good! ^______^");
-			else
-				Serial.println(") Bad /_____\\");
-			#endif
-			if (_data[4] == TN901_ENDADDRESS && ((_data[0] + _data[1] + _data[2]) & 0xff) == _data[3])
-			{
-				if (_data[0] == TN901_OTADDRESS)
-				{
-					_tempObject = ((_data[1] * 256.0 + _data[2]) / 16.0) - 273.15;
-					flag |= MODE_OT;
-					#ifdef TN901_DEBUG
-					Serial.print("TN901: Got object temp = ");
-					Serial.println(_tempObject);
-					#endif
-				}
-				else if (_data[0] == TN901_ETADDRESS)
-				{
-					_tempEnvironment = ((_data[1] * 256.0 + _data[2]) / 16.0) - 273.15;
-					flag |= MODE_ET;
-					#ifdef TN901_DEBUG
-					Serial.print("TN901: Got environment temp = ");
-					Serial.println(_tempObject);
-					#endif
-				}
-			}
+			flag |= updateTemperature();
 
 			#ifdef TN901_DEBUG
 			Serial.print("TN901: mode = ");
@@ -152,7 +167,7 @@ public:
 
 	float getObjectTemperature() const { return _tempObject; }
 	float getEnvironmentTemperature() const { return _tempEnvironment; }
-    
+	
 	bool startConversion(void (*isrFunc)())
 	{
 		int8_t interrupt = digitalPinToInterrupt(_clkPin);
@@ -162,7 +177,7 @@ public:
 			return false;
 		
 		// prepare interrupt
-		
+		_idx = 0;
 		attachInterrupt(interrupt, isrFunc, FALLING);
 		
 		// start conversion
@@ -184,66 +199,36 @@ public:
 	
 	void processIsr()
 	{
+		if (_idx == 0)
+			_data[0] = _data[1] = _data[2] = _data[3] = _data[4] = 0x00;
+
 		uint8_t nByte = _idx / 8;
-		uint8_t nBit = 7 - (_idx % 8);
 		
-		_data[nByte] |= (digitalRead(_dataPin) == HIGH) ? 0x01 << nBit : 0x00;
+		_data[nByte] <<= 1;
+		_data[nByte] |= (digitalRead(_dataPin) == HIGH) ? 0x01 : 0x00;
 		
 		++_idx;
-		if (_idx == 40) // read in 40 bits...
+		if (_idx >= 40) // read 40 bits...
 		{
+			uint8_t flag = updateTemperature();
 			_idx = 0;
-			#ifdef TN901_DEBUG
-			Serial.print("TN901: data: ");
-			for (int i = 0;i < 5;++i)
-			{
-				Serial.print(_data[i], HEX);
-				Serial.print(" : ");
-			}
-
-			Serial.print(", crc = ");
-			Serial.print((_data[0] + _data[1] + _data[2]) & 0xff, HEX);
-			Serial.print(" (");
-			Serial.print(_data[3], HEX);
-			if (((_data[0] + _data[1] + _data[2]) & 0xff) == _data[3])
-				Serial.println(") Good! ^______^");
-			else
-				Serial.println(") Bad /_____\\");
-			#endif
 			
-			if (_data[4] == TN901_ENDADDRESS && ((_data[0] + _data[1] + _data[2]) & 0xff) == _data[3])
-			{
-				if (_data[0] == TN901_OTADDRESS)
-				{
-					_tempObject = ((_data[1] * 256.0 + _data[2]) / 16.0) - 273.15;
-					#ifdef TN901_DEBUG
-					Serial.print("TN901: Got object temp = ");
-					Serial.println(_tempObject);
-					#endif
-					if (_interruptEnvironment != NULL)
-						_interruptEnvironment();
-				}
-				else if (_data[0] == TN901_ETADDRESS)
-				{
-					_tempEnvironment = ((_data[1] * 256.0 + _data[2]) / 16.0) - 273.15;
-					#ifdef TN901_DEBUG
-					Serial.print("TN901: Got environment temp = ");
-					Serial.println(_tempObject);
-					#endif
-					if (_interruptObject != NULL)
-						_interruptObject();
-				}
+			if (flag == MODE_ET) {
+				if (_interruptEnvironment != NULL)
+					_interruptEnvironment();
+			} else if (flag == MODE_OT) {
+				if (_interruptObject != NULL)
+					_interruptObject();
 			}
-			_data[0] = _data[1] = _data[2] = _data[3] = _data[4] = 0x00;
 		}
 	}
-	
-    void attachEnvironmentInterrupt(tn901_interrupt func)
+
+	void attachEnvironmentInterrupt(tn901_interrupt func)
 	{
 		_interruptEnvironment = func;
 	}
-	
-    void attachObjectInterrupt(tn901_interrupt func)
+
+	void attachObjectInterrupt(tn901_interrupt func)
 	{
 		_interruptObject = func;
 	}
