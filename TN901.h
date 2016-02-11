@@ -9,6 +9,10 @@
 typedef uint32_t time_t;
 #endif
 
+// max frame length is 20ms according to datasheet, using 25 to give it
+// some buffer.
+#define TN901_FRAME_TIMEOUT 25 //ms
+
 #define TN901_OTADDRESS 0x4c
 #define TN901_ETADDRESS 0x66
 #define TN901_ENDADDRESS 0x0d
@@ -28,8 +32,8 @@ private:
 	uint8_t _ackPin;
 	mutable uint8_t _data[5];
 	
-	uint8_t _idx;
-	time_t _conversionStartMillis;
+	mutable uint8_t _idx;
+	mutable time_t _conversionStartMillis;
 	tn901_interrupt _interruptEnvironment;
 	tn901_interrupt _interruptObject;
 
@@ -125,17 +129,17 @@ public:
 			{
 				for(uint8_t i = 0; i < 8; ++i) // 8 bits per byte
 				{
-					 // wait for clkPin go HIGH
-					while (!digitalRead(_clkPin))
-					{
-						wdt_reset();
-					}
+					time_t timeoutMillis;
 					// wait for clkPin go LOW
 					while(digitalRead(_clkPin))
-					{
 						wdt_reset();
-					}
-					_data[j]= (_data[j] << 1) | ((digitalRead(_dataPin) == HIGH) ? 0x01 : 0x00);
+
+					_data[j] <<= 1;
+					_data[j] |= ((digitalRead(_dataPin) == HIGH) ? 0x01 : 0x00);
+
+					// wait for clkPin go HIGH
+					while (!digitalRead(_clkPin))
+						wdt_reset();
 				}
 			}
 
@@ -198,13 +202,13 @@ public:
 		detachInterrupt(interrupt);
 	}
 	
-	void processIsr()
+	void processIsr() const
 	{
 		time_t timeoutMillis = millis() - _conversionStartMillis;
-		if (_idx == 0 || timeoutMillis > 25) // max frame length is 20ms according to datasheet
+		if (_idx == 0 || timeoutMillis > TN901_FRAME_TIMEOUT)
 		{
 			#ifdef TN901_DEBUG
-			if (timeoutMillis > 25 && _idx != 0)
+			if (timeoutMillis > TN901_FRAME_TIMEOUT && _idx != 0)
 				Serial.println("TN901: timed out");
 			#endif
 
