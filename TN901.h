@@ -53,22 +53,21 @@ typedef uint32_t time_t;
 #define MODE_OT 0x01
 #define MODE_ET 0x02
 
-typedef void (*tn901_interrupt)(void);
-
 class TN901
 {
 private:
-	mutable float _tempEnvironment;
-	mutable float _tempObject;
 	uint8_t _dataPin;
 	uint8_t _clkPin;
 	uint8_t _ackPin;
+
+	mutable float _tempEnvironment;
+	mutable float _tempObject;
 	mutable uint8_t _data[5];
 	
 	mutable uint8_t _idx;
 	mutable time_t _conversionStartMillis;
-	tn901_interrupt _interruptEnvironment;
-	tn901_interrupt _interruptObject;
+	mutable bool _environmentUpdated;
+	mutable bool _objectUpdated;
 
 	void init()
 	{
@@ -114,6 +113,7 @@ private:
 				Serial.print("TN901: Got object temp = ");
 				Serial.println(_tempObject);
 				#endif
+				_objectUpdated = true;
 				return MODE_OT;
 			}
 			else if (_data[0] == TN901_ETADDRESS)
@@ -123,6 +123,7 @@ private:
 				Serial.print("TN901: Got environment temp = ");
 				Serial.println(_tempObject);
 				#endif
+				_environmentUpdated = true;
 				return MODE_ET;
 			}
 		}
@@ -203,8 +204,16 @@ public:
 		return;
 	}
 
-	float getObjectTemperature() const { return _tempObject; }
-	float getEnvironmentTemperature() const { return _tempEnvironment; }
+	float getObjectTemperature() const
+	{
+		_objectUpdated = false;
+		return _tempObject;
+	}
+	
+	float getEnvironmentTemperature() const {
+		_environmentUpdated = false;
+		return _tempEnvironment;
+	}
 	
 	bool startConversion(void (*isrFunc)())
 	{
@@ -238,10 +247,10 @@ public:
 	void processIsr() const
 	{
 		time_t timeoutMillis = millis() - _conversionStartMillis;
-		if (_idx == 0 || timeoutMillis > TN901_FRAME_TIMEOUT)
+		if (_idx >= 40 || timeoutMillis > TN901_FRAME_TIMEOUT)
 		{
 			#ifdef TN901_DEBUG
-			if (timeoutMillis > TN901_FRAME_TIMEOUT && _idx != 0)
+			if (timeoutMillis > TN901_FRAME_TIMEOUT && _idx < 40)
 				Serial.println("TN901: timed out");
 			#endif
 
@@ -257,29 +266,11 @@ public:
 
 		++_idx;
 		if (_idx >= 40) // read 40 bits...
-		{
-			uint8_t flag = updateTemperature();
-			_idx = 0;
-
-			if (flag == MODE_ET) {
-				if (_interruptEnvironment != NULL)
-					_interruptEnvironment();
-			} else if (flag == MODE_OT) {
-				if (_interruptObject != NULL)
-					_interruptObject();
-			}
-		}
+			updateTemperature();
 	}
-
-	void attachEnvironmentInterrupt(tn901_interrupt func)
-	{
-		_interruptEnvironment = func;
-	}
-
-	void attachObjectInterrupt(tn901_interrupt func)
-	{
-		_interruptObject = func;
-	}
+	
+	bool isEnvironmentTemperatureUpdated() const { return _environmentUpdated; }
+	bool isObjectTemperatureUpdated() const { return _objectUpdated; }
 };
 
 #endif

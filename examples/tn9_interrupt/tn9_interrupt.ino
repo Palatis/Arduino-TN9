@@ -8,25 +8,11 @@ void tn_isr() {
   tn.processIsr();
 }
 
-void onEnvironmentTemperature() {
-  Serial.print("Env: ");
-  Serial.println(tn.getEnvironmentTemperature());
-}
-
-void onObjectTemperature() {
-  Serial.print("Obj: ");
-  Serial.println(tn.getObjectTemperature());
-}
-
 void setup() {
   Serial.begin(115200);
 
   // clk must be on a interrupt pin for interrupt support
   tn.init(/* data */ 11, /* clk */ 2, /* ack */ 13);
-
-  // these functions are called on conversion done
-  tn.attachEnvironmentInterrupt(onEnvironmentTemperature);
-  tn.attachObjectInterrupt(onObjectTemperature);
 
   if (tn.startConversion(tn_isr))
     Serial.println("registered interrupt");
@@ -35,13 +21,17 @@ void setup() {
 }
 
 void loop() {
-  // do your useful stuff...
-  Serial.println("Blah");
-  delay(3000);
-  
-  // unregister the conversion done callback
-  //tn.attachEnvironmentInterrupt(NULL);
-  //tn.attachObjectInterrupt(NULL);
+  // the conversion is done continuesly
+  if (tn.isEnvironmentTemperatureUpdated()) {
+    Serial.print("Env: ");
+    // reading it reset the updated flag
+    Serial.println(tn.getEnvironmentTemperature());
+  }
+
+  if (tn.isObjectTemperatureUpdated()) {
+    Serial.print("Obj: ");
+    Serial.println(tn.getObjectTemperature());
+  }
   
   // stop the conversion if you don't need it anymore
   //tn.endConversion();
